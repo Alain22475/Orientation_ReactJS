@@ -1,12 +1,15 @@
 /* eslint-disable no-unused-vars */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import './styles/ManageEvents.css'; // Optional CSS for styling
-
+import Callapi from '../utils/callApi';
+import { backend_path } from '../utils/enum';
 
 const ManageEvents = () => {
   const [events, setEvents] = useState([]); // Event records
   const [searchTerm, setSearchTerm] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [formData, setFormData] = useState({
     id: null,
     eventName: '',
@@ -19,32 +22,68 @@ const ManageEvents = () => {
 
   const [isEditing, setIsEditing] = useState(false); // Track editing mode
 
+  const fetchEvents = async () => {
+    setLoading(true);
+    try {
+      const response = await Callapi.get(backend_path.ALL_EVENTS);
+      // console.log("Fetched Event", response.data);
+      if (Array.isArray(response.data)) {
+        setEvents(response.data);
+      } else {
+        setEvents([]);
+      }
+    } catch (error) {
+      setError(`Error fetching events: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchEvents();
+  }, []);
+
   // Handle input changes for the form
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value ?? "",
+    }));
   };
 
   // Handle form submission (Add or Update)
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (isEditing) {
-      // Update event
-      setEvents((prev) =>
-        prev.map((event) =>
-          event.id === formData.id ? { ...formData } : event
-        )
-      );
-      alert('Event updated successfully!');
-    } else {
-      // Add new event
-      const newEvent = { ...formData, id: Date.now() }; // Assign a unique ID
-      setEvents((prev) => [...prev, newEvent]);
-      alert('Event added successfully!');
+    setLoading(true);
+    try {
+      if (isEditing) {
+        // Update event
+        const response = await Callapi.put(`${backend_path.UPDATE_EVENT}${formData.id}`, formData);
+        if (response.data) {
+          setEvents((prev) =>
+            prev.map((event) =>
+              event.id === formData.id ? response.data : event
+            )
+          );
+          alert('Event updated successfully!');
+        }
+      } else {
+        // Add new event
+        const newEvent = { ...formData, id: Date.now() }; // Assign a unique ID
+        const response = await Callapi.post(backend_path.CREATE_EVENT, formData);
+        if (response.data) {
+          setEvents((prev) => [...prev, response.data]);
+          alert('Event added successfully!');
+        }
+      }
+      resetForm();
+    } catch (error) {
+      setError(`Error: ${error.response?.data?.message || error.message}`);
+    } finally {
+      setLoading(false);
     }
-
-    resetForm();
   };
 
   // Reset form data
@@ -68,9 +107,18 @@ const ManageEvents = () => {
   };
 
   // Handle delete button click
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     if (window.confirm('Are you sure you want to delete this event?')) {
-      setEvents((prev) => prev.filter((event) => event.id !== id));
+      setLoading(true);
+      try {
+        await Callapi.delete(`${backend_path.DELETE_EVENT}${id}`);
+        setEvents((prev) => prev.filter((event) => event.id !== id));
+        alert('Event deleted successfully!');
+      } catch (error) {
+        setError(`Error deleting event: ${error.response?.data?.message || error.message}`);
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -84,6 +132,7 @@ const ManageEvents = () => {
   return (
     <div className="manage-events-container">
       <h2>Manage Events</h2>
+      {error && <div className="error-message">{error}</div>}
 
       {/* Search Input */}
       <input
@@ -170,8 +219,8 @@ const ManageEvents = () => {
           </tr>
         </thead>
         <tbody>
-          {filteredEvents.map((event) => (
-            <tr key={event.id}>
+          {filteredEvents.map((event, index) => (
+            <tr key={event.id || index}>
               <td>{event.eventName}</td>
               <td>{event.startDateTime}</td>
               <td>{event.endDateTime}</td>
